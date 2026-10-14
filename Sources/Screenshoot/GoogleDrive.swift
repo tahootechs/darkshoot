@@ -24,6 +24,8 @@ final class GoogleDrive {
     private static let clientIDKey = "googleClientID"
     private static let secretKey = "googleClientSecret"
     private static let refreshKey = "googleRefreshToken"
+    private static let folderKey = "googleDriveFolder"
+    private static let folderMime = "application/vnd.google-apps.folder"
 
     private var accessToken: String?
     private var accessTokenExpiry = Date.distantPast
@@ -36,6 +38,12 @@ final class GoogleDrive {
     var clientSecret: String {
         get { Keychain.get(Self.secretKey) ?? "" }
         set { Keychain.set(newValue, for: Self.secretKey) }
+    }
+
+    /// Upload destination folder name; empty means the My Drive root.
+    var folderName: String {
+        get { UserDefaults.standard.string(forKey: Self.folderKey) ?? "Screenshoot" }
+        set { UserDefaults.standard.set(newValue, forKey: Self.folderKey) }
     }
 
     var isSignedIn: Bool { Keychain.get(Self.refreshKey) != nil }
@@ -82,7 +90,9 @@ final class GoogleDrive {
     func upload(png: Data, name: String) async throws -> String {
         let token = try await validAccessToken()
         let boundary = UUID().uuidString
-        let metadata = try JSONSerialization.data(withJSONObject: ["name": name, "mimeType": "image/png"])
+        var meta: [String: Any] = ["name": name, "mimeType": "image/png"]
+        if let folder = try await folderID(token: token) { meta["parents"] = [folder] }
+        let metadata = try JSONSerialization.data(withJSONObject: meta)
         var body = Data("--\(boundary)\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".utf8)
         body.append(metadata)
         body.append(Data("\r\n--\(boundary)\r\nContent-Type: image/png\r\n\r\n".utf8))
@@ -97,13 +107,43 @@ final class GoogleDrive {
         struct File: Decodable { let id: String; let webViewLink: String }
         let file = try JSONDecoder().decode(File.self, from: try await send(request))
 
-        var permission = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(file.id)/permissions")!)
-        permission.httpMethod = "POST"
-        permission.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        permission.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        permission.httpBody = try JSONSerialization.data(withJSONObject: ["role": "reader", "type": "anyone"])
-        _ = try await send(permission)
+        _ = try await send(try jsonRequest("https://www.googleapis.com/drive/v3/files/\(file.id)/permissions",
+                                           token: token, body: ["role": "reader", "type": "anyone"]))
         return file.webViewLink
+    }
+
+    /// Finds the app-created folder named `folderName`, creating it if missing. nil means the My Drive root.
+    /// The `drive.file` scope only lists files this app created, so a same-named user folder is never picked.
+    private func folderID(token: String) async throws -> String? {
+        let name = folderName
+        guard !name.isEmpty else { return nil }
+        let escaped = name.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        var list = URLComponents(string: "https://www.googleapis.com/drive/v3/files")!
+        list.queryItems = [
+            .init(name: "q", value: "name = '\(escaped)' and mimeType = '\(Self.folderMime)' and trashed = false"),
+            .init(name: "fields", value: "files(id)"),
+            .init(name: "pageSize", value: "1"),
+        ]
+        list.percentEncodedQuery = list.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        var request = URLRequest(url: list.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        struct Folder: Decodable { let id: String }
+        struct Listing: Decodable { let files: [Folder] }
+        if let existing = try JSONDecoder().decode(Listing.self, from: try await send(request)).files.first {
+            return existing.id
+        }
+        let create = try jsonRequest("https://www.googleapis.com/drive/v3/files?fields=id",
+                                     token: token, body: ["name": name, "mimeType": Self.folderMime])
+        return try JSONDecoder().decode(Folder.self, from: try await send(create)).id
+    }
+
+    private func jsonRequest(_ url: String, token: String, body: [String: Any]) throws -> URLRequest {
+        var request = URLRequest(url: URL(string: url)!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return request
     }
 
     /// Toolbar entry point: uploads in the background and puts the link on the clipboard.

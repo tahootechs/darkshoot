@@ -101,11 +101,15 @@ Upload memakai Google Drive API dengan OAuth. Kamu perlu membuat OAuth client se
 5. Di app: **menu bar → Settings…**, isi **Client ID** dan **Client Secret**, lalu klik **Sign in with Google**.
 6. Selesaikan login di browser.
 
-Setelah login, tekan ⌘D atau tombol ☁️ di toolbar. File diupload ke root My Drive, dibuat bisa dilihat siapa saja yang punya link, lalu link-nya disalin ke clipboard.
+Panduan langkah demi langkah (bahasa Inggris, dengan link langsung ke Google Cloud Console) juga ada di **menu bar → Settings… → Google Drive setup guide**. Kalau login gagal dengan `Error 403: access_denied`, ikuti langkah 5 di panduan itu: tambahkan email kamu sebagai test user, atau publish app.
+
+Setelah login, tekan ⌘D atau tombol ☁️ di toolbar. File diupload ke folder **Screenshoot** di My Drive (dibuat otomatis saat upload pertama), dibuat bisa dilihat siapa saja yang punya link, lalu link-nya disalin ke clipboard.
+
+Nama folder bisa diganti di **Settings… → Folder**. Kalau kolom dikosongkan, file diupload ke root My Drive. Kalau folder dihapus atau masuk Trash, app membuat folder baru pada upload berikutnya.
 
 Catatan:
 
-- App hanya memakai scope `drive.file`, jadi hanya bisa mengakses file yang ia upload sendiri.
+- App hanya memakai scope `drive.file`, jadi hanya bisa mengakses file dan folder yang ia buat sendiri. Folder buatanmu sendiri dengan nama yang sama tidak akan dipakai; app membuat folder sendiri.
 - Client Secret dan refresh token disimpan di **Keychain**. Client ID disimpan di UserDefaults. Tidak ada yang disimpan di repo.
 - Selama consent screen masih berstatus **Testing**, login kedaluwarsa setelah 7 hari. Publish ke **Production** supaya tidak perlu login ulang tiap minggu.
 
