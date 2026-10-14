@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import ImageIO
 import Network
 import Security
 
@@ -14,6 +15,14 @@ enum DriveError: LocalizedError {
         case .http(let status, let body): "Google API error \(status): \(body)"
         }
     }
+}
+
+struct DriveFile: Decodable, Sendable {
+    let id: String
+    let name: String
+    let createdTime: Date
+    let webViewLink: String
+    let thumbnailLink: String?
 }
 
 /// Google Drive upload via OAuth 2.0 for desktop apps (loopback redirect + PKCE).
@@ -124,9 +133,7 @@ final class GoogleDrive {
             .init(name: "fields", value: "files(id)"),
             .init(name: "pageSize", value: "1"),
         ]
-        list.percentEncodedQuery = list.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        var request = URLRequest(url: list.url!)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let request = getRequest(list, token: token)
         struct Folder: Decodable { let id: String }
         struct Listing: Decodable { let files: [Folder] }
         if let existing = try JSONDecoder().decode(Listing.self, from: try await send(request)).files.first {
@@ -135,6 +142,74 @@ final class GoogleDrive {
         let create = try jsonRequest("https://www.googleapis.com/drive/v3/files?fields=id",
                                      token: token, body: ["name": name, "mimeType": Self.folderMime])
         return try JSONDecoder().decode(Folder.self, from: try await send(create)).id
+    }
+
+    /// Every image this app uploaded, newest first. The `drive.file` scope only returns this app's files.
+    func listUploads() async throws -> [DriveFile] {
+        let token = try await validAccessToken()
+        let decoder = JSONDecoder()
+        // Drive timestamps carry milliseconds ("2026-10-14T03:21:09.512Z"), which `.iso8601` rejects.
+        decoder.dateDecodingStrategy = .custom { decoder in
+            try Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+                .parse(decoder.singleValueContainer().decode(String.self))
+        }
+        struct Page: Decodable { let files: [DriveFile]; let nextPageToken: String? }
+
+        var files: [DriveFile] = []
+        var pageToken: String?
+        repeat {
+            var list = URLComponents(string: "https://www.googleapis.com/drive/v3/files")!
+            list.queryItems = [
+                .init(name: "q", value: "mimeType contains 'image/' and trashed = false"),
+                .init(name: "orderBy", value: "createdTime desc"),
+                .init(name: "pageSize", value: "100"),
+                .init(name: "fields", value: "nextPageToken,files(id,name,createdTime,webViewLink,thumbnailLink)"),
+            ]
+            if let pageToken { list.queryItems?.append(.init(name: "pageToken", value: pageToken)) }
+            let page = try decoder.decode(Page.self, from: try await send(getRequest(list, token: token)))
+            files += page.files
+            pageToken = page.nextPageToken
+        } while pageToken != nil
+        return files
+    }
+
+    /// Preview at most `maxPixels` on its longest side: Drive's thumbnail if it has one, else the original downscaled.
+    func thumbnail(for file: DriveFile, maxPixels: Int) async throws -> NSImage? {
+        let token = try await validAccessToken()
+        var sources: [String] = []
+        if let link = file.thumbnailLink {
+            // Thumbnail links end in a size suffix such as "=s220".
+            sources.append(link.replacingOccurrences(of: #"=s\d+$"#, with: "=s\(maxPixels)", options: .regularExpression))
+        }
+        sources.append("https://www.googleapis.com/drive/v3/files/\(file.id)?alt=media")
+        for source in sources {
+            guard let url = URL(string: source) else { continue }
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            if let data = try? await send(request), let image = Self.downscaled(data, maxPixels: maxPixels) {
+                return image
+            }
+        }
+        return nil
+    }
+
+    private static func downscaled(_ data: Data, maxPixels: Int) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+              ] as CFDictionary) else { return nil }
+        return NSImage(cgImage: image, size: .zero)
+    }
+
+    private func getRequest(_ components: URLComponents, token: String) -> URLRequest {
+        var components = components
+        // URLComponents leaves "+" unescaped, but the server decodes it as a space.
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
     }
 
     private func jsonRequest(_ url: String, token: String, body: [String: Any]) throws -> URLRequest {
@@ -159,6 +234,7 @@ final class GoogleDrive {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(link, forType: .string)
                 Toast.show("Link disalin: \(link)")
+                GalleryWindowController.shared.reloadIfVisible()
             } catch {
                 Toast.hide()
                 NSApp.activate(ignoringOtherApps: true)

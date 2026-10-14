@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recordItem.target = self
         menu.addItem(captureItem)
         menu.addItem(recordItem)
+        let galleryItem = NSMenuItem(title: "Gallery…", action: #selector(openGallery), keyEquivalent: "")
+        galleryItem.target = self
+        menu.addItem(galleryItem)
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -54,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureFromMenu() { capture(.image) }
     @objc private func recordFromMenu() { toggleRecording() }
+    @objc private func openGallery() { GalleryWindowController.shared.show() }
     @objc private func openSettings() { SettingsWindowController.shared.show() }
 
     private func toggleRecording() {

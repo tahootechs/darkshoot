@@ -9,6 +9,7 @@ Aplikasi screenshot ala [Lightshot](https://app.prntscr.com/) untuk macOS, berja
 - **Pilihan warna**: merah, kuning, hijau, biru, hitam, putih.
 - **Tebal coretan**: tipis, sedang, tebal.
 - **Output**: copy ke clipboard, simpan PNG, atau upload ke Google Drive (link langsung disalin ke clipboard).
+- **Gallery**: daftar screenshot yang sudah diupload ke Google Drive, lengkap dengan thumbnail.
 - **Screen record**: rekam area tertentu ke file `.mov` (H.264, 60 fps, kursor ikut terekam).
 - **Hotkey global custom** untuk screenshot dan screen record.
 - Hasil gambar memakai resolusi penuh Retina, dan mendukung multi-monitor.
@@ -107,6 +108,15 @@ Setelah login, tekan ⌘D atau tombol ☁️ di toolbar. File diupload ke folder
 
 Nama folder bisa diganti di **Settings… → Folder**. Kalau kolom dikosongkan, file diupload ke root My Drive. Kalau folder dihapus atau masuk Trash, app membuat folder baru pada upload berikutnya.
 
+### Gallery
+
+**Menu bar → Gallery…** menampilkan semua screenshot yang pernah diupload app ini, diurutkan dari yang terbaru. Ini termasuk upload lama di root My Drive.
+
+- Klik dua kali untuk membuka file di browser.
+- Klik kanan untuk **Open in Browser** atau **Copy Link**.
+- Klik **Refresh** untuk memuat ulang. Kalau Gallery sedang terbuka, daftarnya diperbarui otomatis setelah upload selesai.
+- File yang dihapus atau dipindah ke Trash di Drive tidak ditampilkan.
+
 Catatan:
 
 - App hanya memakai scope `drive.file`, jadi hanya bisa mengakses file dan folder yang ia buat sendiri. Folder buatanmu sendiri dengan nama yang sama tidak akan dipakai; app membuat folder sendiri.
@@ -119,7 +129,8 @@ Catatan:
 Sources/Screenshoot/
   main.swift         App menu bar, alur capture, ScreenCaptureKit
   Overlay.swift      Overlay seleksi, alat coret, toolbar, copy/save
-  GoogleDrive.swift  OAuth (loopback + PKCE), upload, Keychain
+  GoogleDrive.swift  OAuth (loopback + PKCE), upload, daftar file, Keychain
+  Gallery.swift      Jendela Gallery (grid thumbnail file di Drive)
   Settings.swift     Jendela Settings dan toast
   HotKeys.swift      Hotkey global (Carbon) dan perekam kombinasi tombol
   Recorder.swift     Screen record dengan SCRecordingOutput
